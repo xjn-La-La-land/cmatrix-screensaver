@@ -119,6 +119,29 @@ source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
 | `CMSS_REQUIRE_VISIBLE_PANE` | `1` | 在 `tmux` 中只允许可见 pane 触发；设为 `0` 可关闭 |
 | `CMSS_DEBUG` | 未设置 | 设置为任意值后输出调试日志 |
 
+## 可替换的屏保命令
+
+`CMSS_COMMAND` 可以换成其他终端像素风格或 ASCII 动画工具。比较适合作为屏保的有：
+
+| 工具 | 风格 | 示例 |
+| --- | --- | --- |
+| [`cmatrix`](https://github.com/abishekvashok/cmatrix) | Matrix 数字雨 | `cmatrix -s -r` |
+| [`pipes.sh`](https://github.com/pipeseroni/pipes.sh) | 经典管道屏保 | `pipes.sh -r 0 -t 1 -p 3 -f 35` |
+| [`cbonsai`](https://gitlab.com/jallbrit/cbonsai) | ASCII 盆栽生长动画 | `cbonsai -S` |
+| [`asciiquarium`](https://pypi.org/project/asciiquarium/) | 终端水族箱 | `asciiquarium` |
+| [`aafire`](https://aa-project.sourceforge.net/aalib/) | ASCII 火焰 | `aafire -driver curses` |
+| [`nyancat`](https://github.com/klange/nyancat) | 彩虹像素动画 | `nyancat -n -s` |
+| [`termsaver`](https://pypi.org/project/termsaver/) | Python 终端屏保集合 | `termsaver matrix` |
+| [`drift`](https://github.com/phlx0/drift) | 现代终端动画屏保 | `drift --scene pipes` |
+
+例如：
+
+```bash
+export CMSS_COMMAND='cbonsai -S'
+```
+
+`pipes.sh` 默认会周期性执行较重的 terminal reset，可能导致退出屏保后主屏内容没有恢复。建议至少加上 `-r 0`；如果仍然丢内容，可以给 `pipes.sh` 包一层，避免它在退出时调用 `tput reset`。
+
 ## 使用命令
 
 脚本加载后会自动启用屏保逻辑，也可以手动控制：
