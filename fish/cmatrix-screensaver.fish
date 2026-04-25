@@ -39,7 +39,46 @@ function __cmss_mark_activity
     set -g CMSS_LAST_ACTIVITY (date +%s)
 end
 
+function __cmss_ensure_int
+    set -l var_name $argv[1]
+    set -l default_value $argv[2]
+
+    if not set -q $var_name
+        set -g $var_name $default_value
+        return 0
+    end
+
+    set -l value $$var_name
+    if test (count $value) -eq 0
+        set -g $var_name $default_value
+        return 0
+    end
+
+    if not string match -qr '^-?[0-9]+$' -- "$value[1]"
+        set -g $var_name $default_value
+        return 0
+    end
+
+    if test (count $value) -gt 1
+        set -g $var_name $value[1]
+    end
+end
+
+function __cmss_normalize_state
+    __cmss_ensure_int CMSS_TIMEOUT 30
+    __cmss_ensure_int CMSS_REQUIRE_VISIBLE_PANE 1
+    __cmss_ensure_int CMSS_ENABLED 0
+    __cmss_ensure_int CMSS_RUNNING 0
+    __cmss_ensure_int CMSS_IN_COMMAND 0
+    __cmss_ensure_int CMSS_PROMPT_EMPTY 0
+    __cmss_ensure_int CMSS_LAST_ACTIVITY (date +%s)
+    __cmss_ensure_int CMSS_TIMER_PID 0
+    __cmss_ensure_int CMSS_FISH_BINDINGS_INSTALLED 0
+end
+
 function __cmss_cancel_timer
+    __cmss_normalize_state
+
     if test "$CMSS_TIMER_PID" -gt 0
         kill "$CMSS_TIMER_PID" >/dev/null 2>&1
         set -g CMSS_TIMER_PID 0
@@ -47,6 +86,7 @@ function __cmss_cancel_timer
 end
 
 function __cmss_schedule_timer
+    __cmss_normalize_state
     set -l timeout $CMSS_TIMEOUT
 
     if test "$CMSS_ENABLED" -ne 1
@@ -79,11 +119,17 @@ function __cmss_schedule_timer
         sleep "$timeout"
         kill -USR1 $fish_pid >/dev/null 2>&1
     end >/dev/null 2>&1 &
-    set -g CMSS_TIMER_PID $last_pid
+    if string match -qr '^[0-9]+$' -- "$last_pid"
+        set -g CMSS_TIMER_PID $last_pid
+    else
+        set -g CMSS_TIMER_PID 0
+    end
     __cmss_log "armed timer pid=$CMSS_TIMER_PID timeout=$timeout"
 end
 
 function __cmss_pane_is_visible
+    __cmss_normalize_state
+
     if test "$CMSS_REQUIRE_VISIBLE_PANE" -ne 1
         return 0
     end
@@ -135,6 +181,8 @@ function __cmss_update_prompt_state
 end
 
 function __cmss_note_prompt_activity
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -300,6 +348,8 @@ function __cmss_restore_key_bindings
 end
 
 function __cmss_preexec --on-event fish_preexec
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -312,6 +362,8 @@ function __cmss_preexec --on-event fish_preexec
 end
 
 function __cmss_prompt_ready --on-event fish_prompt
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -324,6 +376,8 @@ function __cmss_prompt_ready --on-event fish_prompt
 end
 
 function __cmss_postexec --on-event fish_postexec
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -333,6 +387,8 @@ function __cmss_postexec --on-event fish_postexec
 end
 
 function __cmss_posterror --on-event fish_posterror
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -342,6 +398,8 @@ function __cmss_posterror --on-event fish_posterror
 end
 
 function __cmss_cancel_event --on-event fish_cancel
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -350,6 +408,7 @@ function __cmss_cancel_event --on-event fish_cancel
 end
 
 function __cmss_run_screensaver
+    __cmss_normalize_state
     set -l now (date +%s)
     set -l tty_state ''
 
@@ -413,11 +472,14 @@ function __cmss_run_screensaver
 end
 
 function __cmss_signal_handler --on-signal USR1
+    __cmss_normalize_state
     __cmss_run_screensaver
     __cmss_schedule_timer
 end
 
 function cmss_enable
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -eq 1
         return 0
     end
@@ -433,6 +495,8 @@ function cmss_enable
 end
 
 function cmss_disable
+    __cmss_normalize_state
+
     if test "$CMSS_ENABLED" -ne 1
         return 0
     end
@@ -447,6 +511,7 @@ function cmss_disable
 end
 
 function cmss_status
+    __cmss_normalize_state
     set -l state prompt-editing
     set -l pane_visible 0
 
@@ -465,4 +530,5 @@ function cmss_status
     echo "enabled=$CMSS_ENABLED state=$state timeout=$CMSS_TIMEOUT require_visible_pane=$CMSS_REQUIRE_VISIBLE_PANE pane_visible=$pane_visible last_activity=$CMSS_LAST_ACTIVITY timer_pid=$CMSS_TIMER_PID"
 end
 
+__cmss_normalize_state
 cmss_enable
