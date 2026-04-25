@@ -28,6 +28,7 @@ set -g CMSS_PROMPT_EMPTY 0
 set -g CMSS_LAST_ACTIVITY (date +%s)
 set -g CMSS_TIMER_PID 0
 set -g CMSS_FISH_BINDINGS_INSTALLED 0
+set -g CMSS_FISH_DEFAULT_GENERIC_INSTALLED 0
 
 function __cmss_log
     if set -q CMSS_DEBUG
@@ -74,6 +75,7 @@ function __cmss_normalize_state
     __cmss_ensure_int CMSS_LAST_ACTIVITY (date +%s)
     __cmss_ensure_int CMSS_TIMER_PID 0
     __cmss_ensure_int CMSS_FISH_BINDINGS_INSTALLED 0
+    __cmss_ensure_int CMSS_FISH_DEFAULT_GENERIC_INSTALLED 0
 end
 
 function __cmss_cancel_timer
@@ -115,10 +117,7 @@ function __cmss_schedule_timer
     end
 
     __cmss_cancel_timer
-    begin
-        sleep "$timeout"
-        kill -USR1 $fish_pid >/dev/null 2>&1
-    end >/dev/null 2>&1 &
+    command sh -c 'sleep "$1"; kill -USR1 "$2" >/dev/null 2>&1' sh "$timeout" "$fish_pid" >/dev/null 2>&1 &
     if string match -qr '^[0-9]+$' -- "$last_pid"
         set -g CMSS_TIMER_PID $last_pid
     else
@@ -194,55 +193,20 @@ function __cmss_note_prompt_activity
     __cmss_update_prompt_state
 end
 
-function __cmss_binding_default_generic
-    __cmss_note_prompt_activity
-
-    if set -q fish_key_bindings
-        if string match -q 'fish_vi_*' -- "$fish_key_bindings"
-            return 0
-        end
+function __cmss_uses_vi_bindings
+    if not set -q fish_key_bindings
+        return 1
     end
 
-    commandline -f self-insert
-end
+    if string match -q 'fish_vi_*' -- "$fish_key_bindings"
+        return 0
+    end
 
-function __cmss_binding_insert_generic
-    __cmss_note_prompt_activity
-    commandline -f self-insert
-end
+    if string match -q 'fish_hybrid_*' -- "$fish_key_bindings"
+        return 0
+    end
 
-function __cmss_binding_visual_generic
-    __cmss_note_prompt_activity
-end
-
-function __cmss_binding_input_function
-    __cmss_note_prompt_activity
-    commandline -f $argv
-end
-
-function __cmss_binding_execute
-    __cmss_note_prompt_activity
-    commandline -f execute
-end
-
-function __cmss_binding_cancel
-    __cmss_note_prompt_activity
-    commandline -f cancel-commandline repaint
-end
-
-function __cmss_binding_repaint
-    __cmss_note_prompt_activity
-    commandline -f clear-screen repaint
-end
-
-function __cmss_binding_up
-    __cmss_note_prompt_activity
-    up-or-search
-end
-
-function __cmss_binding_down
-    __cmss_note_prompt_activity
-    down-or-search
+    return 1
 end
 
 function __cmss_binding_generic_var
@@ -287,10 +251,10 @@ end
 function __cmss_install_binding
     set -l mode $argv[1]
     set -l key $argv[2]
-    set -l command $argv[3]
+    set -l commands $argv[3..-1]
 
     __cmss_save_binding "$mode" "$key"
-    bind --user -M "$mode" "$key" "$command"
+    bind --user -M "$mode" "$key" $commands
 end
 
 function __cmss_install_key_bindings
@@ -298,23 +262,26 @@ function __cmss_install_key_bindings
         return 0
     end
 
-    __cmss_install_binding default '' '__cmss_binding_default_generic'
-    __cmss_install_binding insert '' '__cmss_binding_insert_generic'
-    __cmss_install_binding visual '' '__cmss_binding_visual_generic'
+    if not __cmss_uses_vi_bindings
+        __cmss_install_binding default '' self-insert __cmss_note_prompt_activity
+        set -g CMSS_FISH_DEFAULT_GENERIC_INSTALLED 1
+    end
+
+    __cmss_install_binding insert '' self-insert __cmss_note_prompt_activity
 
     for mode in default insert visual
-        __cmss_install_binding $mode backspace '__cmss_binding_input_function backward-delete-char'
-        __cmss_install_binding $mode delete '__cmss_binding_input_function delete-char'
-        __cmss_install_binding $mode left '__cmss_binding_input_function backward-char'
-        __cmss_install_binding $mode right '__cmss_binding_input_function forward-char'
-        __cmss_install_binding $mode up '__cmss_binding_up'
-        __cmss_install_binding $mode down '__cmss_binding_down'
-        __cmss_install_binding $mode home '__cmss_binding_input_function beginning-of-line'
-        __cmss_install_binding $mode end '__cmss_binding_input_function end-of-line'
-        __cmss_install_binding $mode tab '__cmss_binding_input_function complete'
-        __cmss_install_binding $mode enter '__cmss_binding_execute'
-        __cmss_install_binding $mode ctrl-c '__cmss_binding_cancel'
-        __cmss_install_binding $mode ctrl-l '__cmss_binding_repaint'
+        __cmss_install_binding $mode backspace backward-delete-char __cmss_note_prompt_activity
+        __cmss_install_binding $mode delete delete-char __cmss_note_prompt_activity
+        __cmss_install_binding $mode left backward-char __cmss_note_prompt_activity
+        __cmss_install_binding $mode right forward-char __cmss_note_prompt_activity
+        __cmss_install_binding $mode up up-or-search __cmss_note_prompt_activity
+        __cmss_install_binding $mode down down-or-search __cmss_note_prompt_activity
+        __cmss_install_binding $mode home beginning-of-line __cmss_note_prompt_activity
+        __cmss_install_binding $mode end end-of-line __cmss_note_prompt_activity
+        __cmss_install_binding $mode tab complete __cmss_note_prompt_activity
+        __cmss_install_binding $mode enter __cmss_note_prompt_activity execute
+        __cmss_install_binding $mode ctrl-c cancel-commandline repaint __cmss_note_prompt_activity
+        __cmss_install_binding $mode ctrl-l clear-screen repaint __cmss_note_prompt_activity
     end
 
     set -g CMSS_FISH_BINDINGS_INSTALLED 1
@@ -325,9 +292,12 @@ function __cmss_restore_key_bindings
         return 0
     end
 
-    __cmss_restore_binding default ''
+    if test "$CMSS_FISH_DEFAULT_GENERIC_INSTALLED" -eq 1
+        __cmss_restore_binding default ''
+        set -g CMSS_FISH_DEFAULT_GENERIC_INSTALLED 0
+    end
+
     __cmss_restore_binding insert ''
-    __cmss_restore_binding visual ''
 
     for mode in default insert visual
         __cmss_restore_binding $mode backspace

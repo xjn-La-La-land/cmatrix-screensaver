@@ -1,32 +1,37 @@
 # cmatrix-screensaver
 
-一个轻量的 shell 原型工具：当当前终端的 `prompt` 长时间处于空闲状态时，自动启动 `cmatrix -s`。
+一个轻量的 Linux 终端屏保脚本：当当前 shell 长时间停在空命令行提示符时，自动启动 `cmatrix -s -r`。
 
-## 设计思路
+它不是系统级 daemon，也不会尝试抢占其他进程正在使用的 TTY。脚本只在当前交互式 shell 会话内工作，因此行为更可控，也更适合放进个人终端配置里。
 
-这个原型刻意运行在当前交互式 shell 会话内部，而不是做成一个系统级 daemon。这样可以避开最难处理的稳定性问题：
+## 工作方式
 
-- 不需要猜测某个 PTY 是否真的空闲
-- 不需要强行向别的进程占用的终端写内容
-- 不需要内核模块、`ptrace` 或 `/proc` 级别的技巧
+脚本会在当前 shell 中跟踪 prompt 状态和输入活动。只有同时满足下面这些条件时，才会认为终端处于可触发屏保的空闲状态：
 
-只有同时满足下面这些条件时，原型才会认为当前 shell 处于“空闲”状态：
-
-- 当前 shell 已经回到 `prompt`
+- shell 已经回到 prompt
 - 当前没有前台命令在运行
 - 当前命令行输入缓冲区为空
-- 在 `CMSS_TIMEOUT` 秒内没有新的 `prompt` 活动
-- 如果运行在 `tmux` 中，则当前 `pane` 仍然对已附着的客户端可见
+- 在 `CMSS_TIMEOUT` 秒内没有新的 prompt 或编辑活动
+- 如果运行在 `tmux` 中，当前 pane 对已附着的客户端可见
 
-当这些条件持续满足足够长时间后，一个很轻的后台计时器会向当前 shell 发送 `SIGUSR1`，然后由 shell 自己再次检查状态，并决定是否执行 `cmatrix -s`。
+当空闲条件持续足够久后，后台计时器会向当前 shell 发送唤醒信号。`zsh`/`fish` 使用 `SIGUSR1`；`bash` 使用 `SIGWINCH`，这样可以在 Readline 停在提示符等待输入时立即唤醒。shell 收到信号后会再次检查状态，确认仍然空闲才会执行 `CMSS_COMMAND`。
 
-## 项目结构
+## 支持范围
 
-- `zsh/cmatrix-screensaver.zsh`：`zsh` 适配层
-- `fish/cmatrix-screensaver.fish`：`fish` 适配层
-- `bin/install.sh`：把 `source` 语句追加到对应 shell 配置文件
+- `bash/cmatrix-screensaver.bash`：基于 `PROMPT_COMMAND`、`SIGWINCH` 和 Readline key binding 跟踪状态
+- `zsh/cmatrix-screensaver.zsh`：基于 `precmd`、`preexec` 和 `zle` widget 跟踪状态
+- `fish/cmatrix-screensaver.fish`：基于 fish 事件和常用 key binding 包装跟踪状态
+- `bin/install.sh`：把对应的 `source` 语句追加到 shell 配置文件
 
 ## 安装
+
+先确认系统里已经安装 `cmatrix`：
+
+```bash
+cmatrix -V
+```
+
+然后在项目目录运行安装脚本：
 
 ```bash
 cd ~/cmatrix-screensaver
@@ -40,16 +45,33 @@ cd ~/cmatrix-screensaver
 ./bin/install.sh fish
 ```
 
-如果两个都要安装：
+如果要安装到 `bash`：
+
+```bash
+cd ~/cmatrix-screensaver
+./bin/install.sh bash
+```
+
+如果所有支持的 shell 都要安装：
 
 ```bash
 cd ~/cmatrix-screensaver
 ./bin/install.sh all
 ```
 
-也可以手动加载：
+安装脚本会修改：
+
+- `bash`：`~/.bashrc`
+- `zsh`：`~/.zshrc`
+- `fish`：`~/.config/fish/config.fish`
+
+安装后重启 shell，或手动加载：
 
 ```bash
+source ~/cmatrix-screensaver/bash/cmatrix-screensaver.bash
+```
+
+```zsh
 source ~/cmatrix-screensaver/zsh/cmatrix-screensaver.zsh
 ```
 
@@ -59,27 +81,47 @@ source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
 
 ## 配置
 
-建议在 shell 配置文件中先设置变量，再 `source` 脚本：
+建议在 shell 配置文件中先设置变量，再 `source` 脚本。
+
+`bash` 示例：
+
+```bash
+export CMSS_TIMEOUT=180
+export CMSS_COMMAND='cmatrix -s -r'
+export CMSS_REQUIRE_VISIBLE_PANE=1
+source ~/cmatrix-screensaver/bash/cmatrix-screensaver.bash
+```
+
+`zsh` 示例：
 
 ```zsh
 export CMSS_TIMEOUT=180
-export CMSS_COMMAND='cmatrix -s'
+export CMSS_COMMAND='cmatrix -s -r'
 export CMSS_REQUIRE_VISIBLE_PANE=1
 source ~/cmatrix-screensaver/zsh/cmatrix-screensaver.zsh
 ```
 
-`fish` 中可以写成：
+`fish` 示例：
 
 ```fish
 set -g CMSS_TIMEOUT 180
-set -g CMSS_COMMAND 'cmatrix -s'
+set -g CMSS_COMMAND 'cmatrix -s -r'
 set -g CMSS_REQUIRE_VISIBLE_PANE 1
 source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
 ```
 
-`CMSS_REQUIRE_VISIBLE_PANE` 默认值为 `1`，也就是默认开启“仅在当前 `pane` 可见时触发”的检查。如果你想恢复旧行为，可以把它设成 `0`。
+可用配置：
 
-脚本加载后可以使用这些辅助命令：
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CMSS_TIMEOUT` | `30` | prompt 空闲多少秒后触发 |
+| `CMSS_COMMAND` | `cmatrix -s -r` | 触发时执行的命令 |
+| `CMSS_REQUIRE_VISIBLE_PANE` | `1` | 在 `tmux` 中只允许可见 pane 触发；设为 `0` 可关闭 |
+| `CMSS_DEBUG` | 未设置 | 设置为任意值后输出调试日志 |
+
+## 使用命令
+
+脚本加载后会自动启用屏保逻辑，也可以手动控制：
 
 ```sh
 cmss_status
@@ -87,7 +129,16 @@ cmss_disable
 cmss_enable
 ```
 
-如果需要调试，可以打开 debug 输出：
+`cmss_status` 会输出当前状态、超时时间、tmux pane 可见性和后台 timer pid，适合排查“为什么没有触发”。
+
+## 调试
+
+打开调试日志：
+
+```bash
+export CMSS_DEBUG=1
+source ~/cmatrix-screensaver/bash/cmatrix-screensaver.bash
+```
 
 ```zsh
 export CMSS_DEBUG=1
@@ -99,17 +150,44 @@ set -g CMSS_DEBUG 1
 source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
 ```
 
+常用检查命令：
+
+```bash
+bash -n bin/install.sh
+bash -n bash/cmatrix-screensaver.bash
+zsh -n zsh/cmatrix-screensaver.zsh
+fish --no-config -n fish/cmatrix-screensaver.fish
+shellcheck bin/install.sh
+shellcheck bash/cmatrix-screensaver.bash
+```
+
+## 卸载
+
+从对应配置文件中删除安装脚本追加的 `source` 行，然后重启 shell：
+
+```sh
+# cmatrix-screensaver
+source ".../cmatrix-screensaver/..."
+```
+
+如果当前会话里已经加载脚本，可以先运行：
+
+```sh
+cmss_disable
+```
+
 ## 当前限制
 
-- 这是一个按 shell 会话生效的原型，不是系统级屏保 daemon。
-- 当前支持 `zsh` 和 `fish`，还没有接入 `bash`。
-- 退出 `cmatrix` 的第一下按键，可能会被 `cmatrix` 自己消费掉。
-- `zsh` 版本依赖 `zle` hook；如果你的 prompt 框架或自定义 widget 很特殊，可能需要微调。
-- `fish` 版本依赖事件和一组常用 key binding 包装来跟踪输入活动，不如 `zsh` 的 `zle` hook 那么完整；特别是在复杂的 vi-normal 模式编辑动作下，空闲计时可能不如 `zsh` 精确。
-- “pane 可见性检查”是面向 `tmux` 设计的；如果不在 `tmux` 中，则默认认为当前终端可见。
+- 这是按 shell 会话生效的屏保脚本，不是系统级锁屏或后台 daemon。
+- 当前支持 `bash`、`zsh` 和 `fish`。
+- 退出 `cmatrix` 的第一下按键可能会被 `cmatrix` 自己消费掉。
+- `bash` 版本依赖 Readline key binding 包装来跟踪常见输入；复杂 vi-mode、宏和非 ASCII 输入场景下，空闲计时可能不如 `zsh` 精确。
+- `zsh` 版本依赖 `zle` hook；如果 prompt 框架或自定义 widget 很特殊，可能需要微调。
+- `fish` 版本依赖事件和一组常用 key binding 包装；复杂 vi-normal 模式编辑动作下，空闲计时可能不如 `zsh` 精确。
+- `tmux` pane 可见性检查只面向 `tmux`；不在 `tmux` 中时默认认为当前终端可见。
 
-## 后续可扩展方向
+## 后续方向
 
-- 继续完善 `fish` 下的输入活动跟踪，减少对复杂编辑动作的漏判
-- 为 shell 状态切换补测试
-- 在 `cmatrix` 退出后，增加可选的锁屏集成
+- 继续完善 `fish` 下的输入活动跟踪
+- 为状态切换补充自动化测试
+- 增加可选的锁屏集成

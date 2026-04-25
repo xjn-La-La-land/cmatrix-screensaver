@@ -44,7 +44,17 @@ case "${TARGET_SHELL}" in
     printf 'Restart fish or run:\n'
     printf '  source "%s/fish/cmatrix-screensaver.fish"\n' "${PROJECT_ROOT}"
     ;;
+  bash)
+    install_source_line \
+      "${HOME}/.bashrc" \
+      "source \"${PROJECT_ROOT}/bash/cmatrix-screensaver.bash\""
+    printf 'Restart bash or run:\n'
+    printf '  source "%s/bash/cmatrix-screensaver.bash"\n' "${PROJECT_ROOT}"
+    ;;
   all)
+    install_source_line \
+      "${HOME}/.bashrc" \
+      "source \"${PROJECT_ROOT}/bash/cmatrix-screensaver.bash\""
     install_source_line \
       "${HOME}/.zshrc" \
       "source \"${PROJECT_ROOT}/zsh/cmatrix-screensaver.zsh\""
@@ -52,11 +62,12 @@ case "${TARGET_SHELL}" in
       "${HOME}/.config/fish/config.fish" \
       "source \"${PROJECT_ROOT}/fish/cmatrix-screensaver.fish\""
     printf 'Restart your shell or run one of:\n'
+    printf '  source "%s/bash/cmatrix-screensaver.bash"\n' "${PROJECT_ROOT}"
     printf '  source "%s/zsh/cmatrix-screensaver.zsh"\n' "${PROJECT_ROOT}"
     printf '  source "%s/fish/cmatrix-screensaver.fish"\n' "${PROJECT_ROOT}"
     ;;
   *)
-    printf 'Usage: %s [zsh|fish|all]\n' "$0" >&2
+    printf 'Usage: %s [zsh|fish|bash|all]\n' "$0" >&2
     exit 1
     ;;
 esac
