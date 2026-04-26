@@ -38,7 +38,9 @@ cd ~/cmatrix-screensaver
 ./bin/install.sh
 ```
 
-默认安装到 `zsh`。如果要安装到 `fish`：
+如果不指定参数，安装脚本会读取当前环境变量 `$SHELL`，并安装到对应的 shell。
+
+例如当前 `$SHELL=/usr/bin/zsh` 时，上面的命令就等价于安装到 `zsh`。如果要显式安装到 `fish`：
 
 ```bash
 cd ~/cmatrix-screensaver
@@ -59,7 +61,16 @@ cd ~/cmatrix-screensaver
 ./bin/install.sh all
 ```
 
-安装脚本会修改：
+安装脚本会检查两件事：
+
+- 对应 shell 是否已安装并且能在 `PATH` 中找到
+- 对应配置文件是否已经存在
+
+如果你显式指定了某个 shell，但它不存在，或者配置文件还不存在，脚本会直接报错退出，不会创建一个空配置文件。
+
+`all` 模式下，脚本只会安装到“shell 已安装且配置文件已存在”的目标，其余会跳过。
+
+可能被修改的配置文件：
 
 - `bash`：`~/.bashrc`
 - `zsh`：`~/.zshrc`
