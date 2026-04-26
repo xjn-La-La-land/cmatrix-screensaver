@@ -140,8 +140,6 @@ source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
 export CMSS_COMMAND='cbonsai -S'
 ```
 
-`pipes.sh` 默认会周期性执行较重的 terminal reset，可能导致退出屏保后主屏内容没有恢复。建议至少加上 `-r 0`；如果仍然丢内容，可以给 `pipes.sh` 包一层，避免它在退出时调用 `tput reset`。
-
 ## 使用命令
 
 脚本加载后会自动启用屏保逻辑，也可以手动控制：
@@ -152,37 +150,7 @@ cmss_disable
 cmss_enable
 ```
 
-`cmss_status` 会输出当前状态、超时时间、tmux pane 可见性和后台 timer pid，适合排查“为什么没有触发”。
-
-## 调试
-
-打开调试日志：
-
-```bash
-export CMSS_DEBUG=1
-source ~/cmatrix-screensaver/bash/cmatrix-screensaver.bash
-```
-
-```zsh
-export CMSS_DEBUG=1
-source ~/cmatrix-screensaver/zsh/cmatrix-screensaver.zsh
-```
-
-```fish
-set -g CMSS_DEBUG 1
-source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
-```
-
-常用检查命令：
-
-```bash
-bash -n bin/install.sh
-bash -n bash/cmatrix-screensaver.bash
-zsh -n zsh/cmatrix-screensaver.zsh
-fish --no-config -n fish/cmatrix-screensaver.fish
-shellcheck bin/install.sh
-shellcheck bash/cmatrix-screensaver.bash
-```
+`cmss_status` 会输出当前状态、超时时间、tmux pane 可见性和后台 timer pid。
 
 ## 卸载
 
@@ -201,16 +169,8 @@ cmss_disable
 
 ## 当前限制
 
-- 这是按 shell 会话生效的屏保脚本，不是系统级锁屏或后台 daemon。
-- 当前支持 `bash`、`zsh` 和 `fish`。
-- 退出 `cmatrix` 的第一下按键可能会被 `cmatrix` 自己消费掉。
+- 这是按 shell 会话生效的脚本，不是系统级锁屏或后台 daemon。
 - `bash` 版本依赖 Readline key binding 包装来跟踪常见输入；复杂 vi-mode、宏和非 ASCII 输入场景下，空闲计时可能不如 `zsh` 精确。
 - `zsh` 版本依赖 `zle` hook；如果 prompt 框架或自定义 widget 很特殊，可能需要微调。
 - `fish` 版本依赖事件和一组常用 key binding 包装；复杂 vi-normal 模式编辑动作下，空闲计时可能不如 `zsh` 精确。
 - `tmux` pane 可见性检查只面向 `tmux`；不在 `tmux` 中时默认认为当前终端可见。
-
-## 后续方向
-
-- 继续完善 `fish` 下的输入活动跟踪
-- 为状态切换补充自动化测试
-- 增加可选的锁屏集成
