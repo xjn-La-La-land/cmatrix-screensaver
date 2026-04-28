@@ -403,11 +403,6 @@ function __cmss_run_screensaver
         return 0
     end
 
-    if not type -q cmatrix
-        __cmss_log "cmatrix not found"
-        return 0
-    end
-
     if not isatty stdin
         return 0
     end
@@ -417,6 +412,22 @@ function __cmss_run_screensaver
     end
 
     if not __cmss_pane_is_visible
+        return 0
+    end
+
+    set -l command_argv (string split -n ' ' -- "$CMSS_COMMAND")
+    if test (count $command_argv) -eq 0
+        return 0
+    end
+
+    set -l command_name $command_argv[1]
+    if string match -q '*/*' -- "$command_name"
+        if not test -x "$command_name"
+            __cmss_log "command not executable: $command_name"
+            return 0
+        end
+    else if not type -q "$command_name"
+        __cmss_log "command not found: $command_name"
         return 0
     end
 
