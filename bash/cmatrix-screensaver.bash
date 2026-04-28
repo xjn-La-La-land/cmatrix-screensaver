@@ -1,4 +1,12 @@
 # cmatrix-screensaver: bash adapter for launching `cmatrix` on prompt idle.
+#
+# Activity tracking lives entirely on PROMPT_COMMAND. Earlier versions wrapped
+# every printable ASCII character (and a handful of control keys) with `bind
+# -x` so the buffer-empty state could be observed in real time; that was
+# fragile in vi-mode, conflicted with fzf/atuin/oh-my-bash, and slowed startup
+# noticeably. The trade-off here is that the screensaver may fire while a line
+# is half-typed -- pressing any key dismisses cmatrix and readline restores
+# the buffer, so no input is lost.
 
 [[ $- == *i* ]] || return 0
 
@@ -22,11 +30,7 @@ declare -g CMSS_PROMPT_EMPTY=0
 declare -g CMSS_LAST_ACTIVITY
 CMSS_LAST_ACTIVITY=$(date +%s)
 declare -g CMSS_TIMER_PID=0
-declare -g CMSS_BASH_BINDINGS_INSTALLED=0
 
-declare -gA CMSS_BASH_ORIG_BINDINGS=()
-declare -gA CMSS_BASH_BIND_KEYSEQS=()
-declare -ga CMSS_BASH_INSTALLED_BINDINGS=()
 declare -ga CMSS_BASH_ORIG_PROMPT_COMMAND_ARRAY=()
 declare -g CMSS_BASH_ORIG_PROMPT_COMMAND=
 declare -g CMSS_BASH_PROMPT_COMMAND_WAS_SET=0
@@ -63,7 +67,6 @@ __cmss_normalize_state() {
   __cmss_ensure_int CMSS_PROMPT_EMPTY 0
   __cmss_ensure_int CMSS_LAST_ACTIVITY "$(date +%s)"
   __cmss_ensure_int CMSS_TIMER_PID 0
-  __cmss_ensure_int CMSS_BASH_BINDINGS_INSTALLED 0
 
   case $CMSS_BASH_WAKE_SIGNAL in
     WINCH | ALRM | INT) ;;
@@ -111,199 +114,6 @@ __cmss_schedule_timer() {
 __cmss_pane_is_visible() {
   __cmss_normalize_state
   CMSS_REQUIRE_VISIBLE_PANE="$CMSS_REQUIRE_VISIBLE_PANE" sh "$CMSS_CORE" pane-visible
-}
-
-__cmss_update_readline_state() {
-  __cmss_mark_activity
-
-  if [[ -z ${READLINE_LINE-} ]]; then
-    CMSS_PROMPT_EMPTY=1
-  else
-    CMSS_PROMPT_EMPTY=0
-  fi
-
-  __cmss_schedule_timer
-}
-
-__cmss_bash_insert_char() {
-  local hex=$1
-  local char
-  printf -v char '%b' "\\x${hex}"
-
-  : "${READLINE_LINE:=}"
-  : "${READLINE_POINT:=0}"
-  READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}${char}${READLINE_LINE:READLINE_POINT}"
-  (( READLINE_POINT += 1 ))
-  __cmss_update_readline_state
-}
-
-__cmss_bash_backward_delete_char() {
-  : "${READLINE_LINE:=}"
-  : "${READLINE_POINT:=0}"
-
-  if (( READLINE_POINT > 0 )); then
-    READLINE_LINE="${READLINE_LINE:0:READLINE_POINT - 1}${READLINE_LINE:READLINE_POINT}"
-    (( READLINE_POINT -= 1 ))
-  fi
-
-  __cmss_update_readline_state
-}
-
-__cmss_bash_delete_char() {
-  : "${READLINE_LINE:=}"
-  : "${READLINE_POINT:=0}"
-
-  if (( READLINE_POINT < ${#READLINE_LINE} )); then
-    READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}${READLINE_LINE:READLINE_POINT + 1}"
-  fi
-
-  __cmss_update_readline_state
-}
-
-__cmss_bash_backward_char() {
-  : "${READLINE_POINT:=0}"
-  if (( READLINE_POINT > 0 )); then
-    (( READLINE_POINT -= 1 ))
-  fi
-  __cmss_update_readline_state
-}
-
-__cmss_bash_forward_char() {
-  : "${READLINE_LINE:=}"
-  : "${READLINE_POINT:=0}"
-  if (( READLINE_POINT < ${#READLINE_LINE} )); then
-    (( READLINE_POINT += 1 ))
-  fi
-  __cmss_update_readline_state
-}
-
-__cmss_bash_beginning_of_line() {
-  READLINE_POINT=0
-  __cmss_update_readline_state
-}
-
-__cmss_bash_end_of_line() {
-  : "${READLINE_LINE:=}"
-  READLINE_POINT=${#READLINE_LINE}
-  __cmss_update_readline_state
-}
-
-__cmss_bash_unix_line_discard() {
-  READLINE_LINE=
-  READLINE_POINT=0
-  __cmss_update_readline_state
-}
-
-__cmss_bash_kill_line() {
-  : "${READLINE_LINE:=}"
-  : "${READLINE_POINT:=0}"
-  READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}"
-  __cmss_update_readline_state
-}
-
-__cmss_bash_lookup_for_hex() {
-  local hex=$1
-  local char
-
-  case $hex in
-    22) printf '%s' '\"' ;;
-    5c) printf '%s' "\\\\" ;;
-    *)
-      printf -v char '%b' "\\x${hex}"
-      printf '%s' "$char"
-      ;;
-  esac
-}
-
-__cmss_bash_find_binding() {
-  local lookup=$1
-  local prefix="\"${lookup}\":"
-  local line
-
-  while IFS= read -r line; do
-    if [[ ${line:0:${#prefix}} == "$prefix" ]]; then
-      printf '%s\n' "$line"
-      return 0
-    fi
-  done < <(bind -p)
-
-  return 1
-}
-
-__cmss_bash_save_binding() {
-  local id=$1
-  local lookup=$2
-  local keyseq=$3
-  local existing=
-
-  existing=$(__cmss_bash_find_binding "$lookup" || true)
-  CMSS_BASH_ORIG_BINDINGS[$id]=$existing
-  CMSS_BASH_BIND_KEYSEQS[$id]=$keyseq
-  CMSS_BASH_INSTALLED_BINDINGS+=("$id")
-}
-
-__cmss_bash_install_bind_x() {
-  local id=$1
-  local lookup=$2
-  local keyseq=$3
-  local command=$4
-
-  __cmss_bash_save_binding "$id" "$lookup" "$keyseq"
-  bind -x "\"${keyseq}\": ${command}"
-}
-
-__cmss_bash_install_key_bindings() {
-  if (( CMSS_BASH_BINDINGS_INSTALLED == 1 )); then
-    return 0
-  fi
-
-  local code hex lookup
-  for code in {32..126}; do
-    printf -v hex '%02x' "$code"
-    lookup=$(__cmss_bash_lookup_for_hex "$hex")
-    __cmss_bash_install_bind_x "char_${hex}" "$lookup" "\\x${hex}" "__cmss_bash_insert_char ${hex}"
-  done
-
-  __cmss_bash_install_bind_x key_ctrl_h '\C-h' '\C-h' __cmss_bash_backward_delete_char
-  __cmss_bash_install_bind_x key_ctrl_question '\C-?' '\C-?' __cmss_bash_backward_delete_char
-  __cmss_bash_install_bind_x key_delete '\e[3~' '\e[3~' __cmss_bash_delete_char
-  __cmss_bash_install_bind_x key_left '\e[D' '\e[D' __cmss_bash_backward_char
-  __cmss_bash_install_bind_x key_right '\e[C' '\e[C' __cmss_bash_forward_char
-  __cmss_bash_install_bind_x key_home '\e[H' '\e[H' __cmss_bash_beginning_of_line
-  __cmss_bash_install_bind_x key_end '\e[F' '\e[F' __cmss_bash_end_of_line
-  __cmss_bash_install_bind_x key_home_tilde '\e[1~' '\e[1~' __cmss_bash_beginning_of_line
-  __cmss_bash_install_bind_x key_end_tilde '\e[4~' '\e[4~' __cmss_bash_end_of_line
-  __cmss_bash_install_bind_x key_ctrl_a '\C-a' '\C-a' __cmss_bash_beginning_of_line
-  __cmss_bash_install_bind_x key_ctrl_e '\C-e' '\C-e' __cmss_bash_end_of_line
-  __cmss_bash_install_bind_x key_ctrl_u '\C-u' '\C-u' __cmss_bash_unix_line_discard
-  __cmss_bash_install_bind_x key_ctrl_k '\C-k' '\C-k' __cmss_bash_kill_line
-
-  CMSS_BASH_BINDINGS_INSTALLED=1
-}
-
-__cmss_bash_restore_key_bindings() {
-  if (( CMSS_BASH_BINDINGS_INSTALLED != 1 )); then
-    return 0
-  fi
-
-  local id original keyseq
-  for id in "${CMSS_BASH_INSTALLED_BINDINGS[@]}"; do
-    original=${CMSS_BASH_ORIG_BINDINGS[$id]-}
-    keyseq=${CMSS_BASH_BIND_KEYSEQS[$id]-}
-
-    if [[ -n $original ]]; then
-      bind "$original"
-    elif [[ $id == char_* ]]; then
-      bind "\"${keyseq}\": self-insert"
-    elif [[ -n $keyseq ]]; then
-      bind -r "$keyseq" >/dev/null 2>&1 || true
-    fi
-  done
-
-  CMSS_BASH_INSTALLED_BINDINGS=()
-  CMSS_BASH_ORIG_BINDINGS=()
-  CMSS_BASH_BIND_KEYSEQS=()
-  CMSS_BASH_BINDINGS_INSTALLED=0
 }
 
 __cmss_bash_install_prompt_command() {
@@ -454,7 +264,6 @@ cmss_enable() {
 
   __cmss_bash_install_prompt_command
   __cmss_bash_install_signal_handler
-  __cmss_bash_install_key_bindings
   CMSS_ENABLED=1
   CMSS_RUNNING=0
   CMSS_IN_COMMAND=0
@@ -472,7 +281,6 @@ cmss_disable() {
   fi
 
   __cmss_cancel_timer
-  __cmss_bash_restore_key_bindings
   __cmss_bash_restore_signal_handler
   __cmss_bash_restore_prompt_command
   CMSS_ENABLED=0

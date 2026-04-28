@@ -184,7 +184,8 @@ cmss_disable
 ## 当前限制
 
 - 这是按 shell 会话生效的脚本，不是系统级锁屏或后台 daemon。
-- `bash` 版本依赖 Readline key binding 包装来跟踪常见输入；复杂 vi-mode、宏和非 ASCII 输入场景下，空闲计时可能不如 `zsh` 精确。
+- `bash` 版本只在 `PROMPT_COMMAND` 时刻更新空闲计时。如果你在 prompt 上慢慢敲一行命令、超过 `CMSS_TIMEOUT` 还没敲回车，屏保会启动；按任意键 cmatrix 退出，readline 恢复你的输入，没有内容丢失。
+- `bash` 版本要求 Bash 4+（`declare -g` / `BASHPID`）；macOS 自带的 Bash 3.2 不支持，请用 Homebrew 装新版 Bash。
 - `zsh` 版本依赖 `zle` hook；如果 prompt 框架或自定义 widget 很特殊，可能需要微调。
 - `fish` 版本依赖事件和一组常用 key binding 包装；复杂 vi-normal 模式编辑动作下，空闲计时可能不如 `zsh` 精确。
 - `tmux` pane 可见性检查只面向 `tmux`；不在 `tmux` 中时默认认为当前终端可见。
