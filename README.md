@@ -64,14 +64,7 @@ cd ~/cmatrix-screensaver
 ./bin/install.sh all
 ```
 
-安装脚本会检查两件事：
-
-- 对应 shell 是否已安装并且能在 `PATH` 中找到
-- 对应配置文件是否已经存在
-
-如果你显式指定了某个 shell，但它不存在，或者配置文件还不存在，脚本会直接报错退出，不会创建一个空配置文件。
-
-`all` 模式下，脚本只会安装到“shell 已安装且配置文件已存在”的目标，其余会跳过。
+脚本只会安装到“shell 已安装且配置文件已存在”的目标，其余会跳过。
 
 可能被修改的配置文件：
 
@@ -126,27 +119,27 @@ source ~/cmatrix-screensaver/fish/cmatrix-screensaver.fish
 
 可用配置：
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `CMSS_TIMEOUT` | `30` | prompt 空闲多少秒后触发 |
-| `CMSS_COMMAND` | `cmatrix -s -r` | 触发时执行的命令 |
-| `CMSS_REQUIRE_VISIBLE_PANE` | `1` | 在 `tmux` 中只允许可见 pane 触发；设为 `0` 可关闭 |
-| `CMSS_DEBUG` | 未设置 | 设置为任意值后输出调试日志 |
+| 变量                        | 默认值          | 说明                                              |
+| --------------------------- | --------------- | ------------------------------------------------- |
+| `CMSS_TIMEOUT`              | `30`            | prompt 空闲多少秒后触发                           |
+| `CMSS_COMMAND`              | `cmatrix -s -r` | 触发时执行的命令                                  |
+| `CMSS_REQUIRE_VISIBLE_PANE` | `1`             | 在 `tmux` 中只允许可见 pane 触发；设为 `0` 可关闭 |
+| `CMSS_DEBUG`                | 未设置          | 设置为任意值后输出调试日志                        |
 
 ## 可替换的屏保命令
 
 `CMSS_COMMAND` 可以换成其他终端像素风格或 ASCII 动画工具。比较适合作为屏保的有：
 
-| 工具 | 风格 | 示例 |
-| --- | --- | --- |
-| [`cmatrix`](https://github.com/abishekvashok/cmatrix) | Matrix 数字雨 | `cmatrix -s -r` |
-| [`pipes.sh`](https://github.com/pipeseroni/pipes.sh) | 经典管道屏保 | `pipes.sh -r 0 -t 1 -p 3 -f 35` |
-| [`cbonsai`](https://gitlab.com/jallbrit/cbonsai) | ASCII 盆栽生长动画 | `cbonsai -S` |
-| [`asciiquarium`](https://pypi.org/project/asciiquarium/) | 终端水族箱 | `asciiquarium` |
-| [`aafire`](https://aa-project.sourceforge.net/aalib/) | ASCII 火焰 | `aafire -driver curses` |
-| [`nyancat`](https://github.com/klange/nyancat) | 彩虹像素动画 | `nyancat -n -s` |
-| [`termsaver`](https://pypi.org/project/termsaver/) | Python 终端屏保集合 | `termsaver matrix` |
-| [`drift`](https://github.com/phlx0/drift) | 现代终端动画屏保 | `drift --scene pipes` |
+| 工具                                                     | 风格                | 示例                            |
+| -------------------------------------------------------- | ------------------- | ------------------------------- |
+| [`cmatrix`](https://github.com/abishekvashok/cmatrix)    | Matrix 数字雨       | `cmatrix -s -r`                 |
+| [`pipes.sh`](https://github.com/pipeseroni/pipes.sh)     | 经典管道屏保        | `pipes.sh -r 0 -t 1 -p 3 -f 35` |
+| [`cbonsai`](https://gitlab.com/jallbrit/cbonsai)         | ASCII 盆栽生长动画  | `cbonsai -S`                    |
+| [`asciiquarium`](https://pypi.org/project/asciiquarium/) | 终端水族箱          | `asciiquarium`                  |
+| [`aafire`](https://aa-project.sourceforge.net/aalib/)    | ASCII 火焰          | `aafire -driver curses`         |
+| [`nyancat`](https://github.com/klange/nyancat)           | 彩虹像素动画        | `nyancat -n -s`                 |
+| [`termsaver`](https://pypi.org/project/termsaver/)       | Python 终端屏保集合 | `termsaver matrix`              |
+| [`drift`](https://github.com/phlx0/drift)                | 现代终端动画屏保    | `drift --scene pipes`           |
 
 例如：
 
@@ -167,7 +160,7 @@ cmss_now
 
 `cmss_status` 会输出当前状态、超时时间、tmux pane 可见性和后台 timer pid。
 
-`cmss_now` 会立即启动 `CMSS_COMMAND`，绕过空闲计时和 prompt 状态检查，方便演示和调试。命令不存在或已经在跑时，它会把错误打到 stderr 并以非零退出。
+`cmss_now` 会立即启动 `CMSS_COMMAND`，绕过空闲计时和 prompt 状态检查，方便演示和调试。
 
 ## 卸载
 
@@ -175,22 +168,6 @@ cmss_now
 cd ~/cmatrix-screensaver
 ./bin/uninstall.sh
 ```
-
-跟 `install.sh` 对称：不指定参数时按 `$SHELL` 自动检测；显式指定 shell 名（`bash` / `zsh` / `fish` / `all`）也可以。
-
-它会从对应 rc 文件中删除安装时写入的 `# cmatrix-screensaver` 标记和 `source` 行——通过 `mktemp` + 原子 `mv` 替换原文件，避免中途中断把 rc 写坏，并保留原文件权限。
-
-执行 `uninstall.sh` 只是改 rc 文件，对**当前**已经加载脚本的会话没有影响。所以建议：
-
-```sh
-# 1. 在当前会话里禁用屏保逻辑
-cmss_disable
-
-# 2. 从 rc 文件里移除 source 行（影响今后启动的新会话）
-~/cmatrix-screensaver/bin/uninstall.sh
-```
-
-或者直接重启 shell，新会话从干净的 rc 启动。
 
 ## 当前限制
 
