@@ -16,12 +16,15 @@
 
 当空闲条件持续足够久后，后台计时器会向当前 shell 发送唤醒信号。`zsh`/`fish` 使用 `SIGUSR1`；`bash` 使用 `SIGWINCH`，这样可以在 Readline 停在提示符等待输入时立即唤醒。shell 收到信号后会再次检查状态，确认仍然空闲才会执行 `CMSS_COMMAND`。
 
-## 支持范围
+## 项目结构
 
-- `bash/cmatrix-screensaver.bash`：基于 `PROMPT_COMMAND`、`SIGWINCH` 和 Readline key binding 跟踪状态
-- `zsh/cmatrix-screensaver.zsh`：基于 `precmd`、`preexec` 和 `zle` widget 跟踪状态
-- `fish/cmatrix-screensaver.fish`：基于 fish 事件和常用 key binding 包装跟踪状态
-- `bin/install.sh`：把对应的 `source` 语句追加到 shell 配置文件
+- `bash/cmatrix-screensaver.bash`：bash adapter，基于 `PROMPT_COMMAND` 和 `SIGWINCH` 跟踪状态（要求 Bash 4+）
+- `zsh/cmatrix-screensaver.zsh`：zsh adapter，基于 `precmd`、`preexec` 和 `zle` widget 跟踪状态
+- `fish/cmatrix-screensaver.fish`：fish adapter，基于 fish 事件和常用 key binding 包装跟踪状态
+- `bin/cmss-core`：POSIX sh 共享核心；三个 adapter 调用它来 fork 后台计时器和查询 tmux pane 可见性
+- `bin/install.sh` / `bin/uninstall.sh`：把 `source` 语句写入 / 移出对应 shell 的配置文件
+- `tests/install-roundtrip.sh`：install + uninstall 的端到端回归测试，CI 和本地都用同一份
+- `.github/workflows/ci.yml`：每次 push / PR 跑 shellcheck + 三种 shell 的 parse 检查 + 上面的 round-trip 测试
 
 ## 安装
 
@@ -168,18 +171,26 @@ cmss_now
 
 ## 卸载
 
-从对应配置文件中删除安装脚本追加的 `source` 行，然后重启 shell：
-
-```sh
-# cmatrix-screensaver
-source ".../cmatrix-screensaver/..."
+```bash
+cd ~/cmatrix-screensaver
+./bin/uninstall.sh
 ```
 
-如果当前会话里已经加载脚本，可以先运行：
+跟 `install.sh` 对称：不指定参数时按 `$SHELL` 自动检测；显式指定 shell 名（`bash` / `zsh` / `fish` / `all`）也可以。
+
+它会从对应 rc 文件中删除安装时写入的 `# cmatrix-screensaver` 标记和 `source` 行——通过 `mktemp` + 原子 `mv` 替换原文件，避免中途中断把 rc 写坏，并保留原文件权限。
+
+执行 `uninstall.sh` 只是改 rc 文件，对**当前**已经加载脚本的会话没有影响。所以建议：
 
 ```sh
+# 1. 在当前会话里禁用屏保逻辑
 cmss_disable
+
+# 2. 从 rc 文件里移除 source 行（影响今后启动的新会话）
+~/cmatrix-screensaver/bin/uninstall.sh
 ```
+
+或者直接重启 shell，新会话从干净的 rc 启动。
 
 ## 当前限制
 
