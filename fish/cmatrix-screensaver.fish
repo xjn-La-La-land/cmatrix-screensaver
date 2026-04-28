@@ -480,6 +480,55 @@ function cmss_disable
     __cmss_log "disabled"
 end
 
+function cmss_now
+    __cmss_normalize_state
+    set -l tty_state ''
+
+    if test "$CMSS_RUNNING" -eq 1
+        echo "cmss: screensaver is already running" >&2
+        return 1
+    end
+
+    if not isatty stdin; or not isatty stdout
+        echo "cmss: not attached to a terminal" >&2
+        return 1
+    end
+
+    set -l command_argv (string split -n ' ' -- "$CMSS_COMMAND")
+    if test (count $command_argv) -eq 0
+        echo "cmss: CMSS_COMMAND is empty" >&2
+        return 1
+    end
+
+    set -l command_name $command_argv[1]
+    if string match -q '*/*' -- "$command_name"
+        if not test -x "$command_name"
+            echo "cmss: command not executable: $command_name" >&2
+            return 1
+        end
+    else if not type -q "$command_name"
+        echo "cmss: command not found: $command_name" >&2
+        return 1
+    end
+
+    set -g CMSS_RUNNING 1
+    __cmss_cancel_timer
+    set tty_state (stty -g 2>/dev/null)
+    __cmss_log "launching screensaver via cmss_now"
+
+    eval $CMSS_COMMAND
+    set -l rc $status
+
+    if test -n "$tty_state"
+        stty "$tty_state" >/dev/null 2>&1
+    end
+
+    set -g CMSS_RUNNING 0
+    __cmss_mark_activity
+    __cmss_log "screensaver exited rc=$rc"
+    return $rc
+end
+
 function cmss_status
     __cmss_normalize_state
     set -l state prompt-editing

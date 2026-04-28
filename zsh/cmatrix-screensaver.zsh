@@ -295,6 +295,54 @@ function cmss_disable() {
   __cmss_log "disabled"
 }
 
+function cmss_now() {
+  local tty_state rc
+  local -a command_argv
+
+  if (( CMSS_RUNNING )); then
+    print -u2 -- "cmss: screensaver is already running"
+    return 1
+  fi
+
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    print -u2 -- "cmss: not attached to a terminal"
+    return 1
+  fi
+
+  command_argv=(${(z)CMSS_COMMAND})
+  if (( ${#command_argv[@]} == 0 )); then
+    print -u2 -- "cmss: CMSS_COMMAND is empty"
+    return 1
+  fi
+
+  if [[ ${command_argv[1]} == */* ]]; then
+    if [[ ! -x ${command_argv[1]} ]]; then
+      print -u2 -- "cmss: command not executable: ${command_argv[1]}"
+      return 1
+    fi
+  elif (( ! ${+commands[${command_argv[1]}]} )); then
+    print -u2 -- "cmss: command not found: ${command_argv[1]}"
+    return 1
+  fi
+
+  CMSS_RUNNING=1
+  __cmss_cancel_timer
+  tty_state=$(stty -g 2>/dev/null) || tty_state=
+  __cmss_log "launching screensaver via cmss_now"
+
+  "${command_argv[@]}"
+  rc=$?
+
+  if [[ -n ${tty_state} ]]; then
+    stty "${tty_state}" 2>/dev/null || true
+  fi
+
+  CMSS_RUNNING=0
+  __cmss_mark_activity
+  __cmss_log "screensaver exited rc=${rc}"
+  return $rc
+}
+
 function cmss_status() {
   local state
   local pane_visible="unknown"

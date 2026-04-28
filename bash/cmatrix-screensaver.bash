@@ -519,6 +519,54 @@ cmss_disable() {
   __cmss_log "disabled"
 }
 
+cmss_now() {
+  __cmss_normalize_state
+  local tty_state rc command_name
+
+  if (( CMSS_RUNNING == 1 )); then
+    printf 'cmss: screensaver is already running\n' >&2
+    return 1
+  fi
+
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    printf 'cmss: not attached to a terminal\n' >&2
+    return 1
+  fi
+
+  read -r command_name _ <<< "$CMSS_COMMAND"
+  if [[ -z $command_name ]]; then
+    printf 'cmss: CMSS_COMMAND is empty\n' >&2
+    return 1
+  fi
+
+  if [[ $command_name == */* ]]; then
+    if [[ ! -x $command_name ]]; then
+      printf 'cmss: command not executable: %s\n' "$command_name" >&2
+      return 1
+    fi
+  elif ! command -v "$command_name" >/dev/null 2>&1; then
+    printf 'cmss: command not found: %s\n' "$command_name" >&2
+    return 1
+  fi
+
+  CMSS_RUNNING=1
+  __cmss_cancel_timer
+  tty_state=$(stty -g 2>/dev/null || true)
+  __cmss_log "launching screensaver via cmss_now"
+
+  eval "$CMSS_COMMAND"
+  rc=$?
+
+  if [[ -n $tty_state ]]; then
+    stty "$tty_state" >/dev/null 2>&1 || true
+  fi
+
+  CMSS_RUNNING=0
+  __cmss_mark_activity
+  __cmss_log "screensaver exited rc=${rc}"
+  return $rc
+}
+
 cmss_status() {
   __cmss_normalize_state
   local state=prompt-editing

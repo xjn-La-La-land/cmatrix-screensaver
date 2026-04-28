@@ -159,9 +159,12 @@ export CMSS_COMMAND='cbonsai -S'
 cmss_status
 cmss_disable
 cmss_enable
+cmss_now
 ```
 
 `cmss_status` 会输出当前状态、超时时间、tmux pane 可见性和后台 timer pid。
+
+`cmss_now` 会立即启动 `CMSS_COMMAND`，绕过空闲计时和 prompt 状态检查，方便演示和调试。命令不存在或已经在跑时，它会把错误打到 stderr 并以非零退出。
 
 ## 卸载
 
