@@ -1,0 +1,114 @@
+#!/bin/sh
+# cmss-core: shared, shell-agnostic primitives used by every adapter.
+# Subcommands:
+#   timer-start <pid> <signal> <timeout_seconds>
+#       Forks a watchdog that sleeps then signals <pid>. Prints the
+#       watchdog pid on stdout. Exits 0 on success, 2 on bad args.
+#   timer-stop <watchdog_pid>
+#       Kills the watchdog. Always exits 0 (already-dead is not an error).
+#   pane-visible
+#       Reads CMSS_REQUIRE_VISIBLE_PANE and TMUX_PANE from the env.
+#       Exits 0 when the screensaver may run, non-zero otherwise.
+
+# shellcheck shell=sh
+set -u
+
+cmss_is_pos_int() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+cmss_timer_start() {
+  if [ "$#" -ne 3 ]; then
+    printf 'cmss-core: timer-start needs <pid> <signal> <timeout>\n' >&2
+    return 2
+  fi
+
+  cmss_is_pos_int "$1" || { printf 'cmss-core: bad pid: %s\n' "$1" >&2; return 2; }
+  cmss_is_pos_int "$3" || { printf 'cmss-core: bad timeout: %s\n' "$3" >&2; return 2; }
+  case "$2" in
+    '') printf 'cmss-core: empty signal\n' >&2; return 2 ;;
+  esac
+
+  target_pid=$1
+  signal=$2
+  timeout=$3
+
+  # Fork the watchdog. The parent (this process) returns immediately after
+  # printing the watchdog's pid; the watchdog itself becomes a child of init
+  # and sleeps until either the timeout fires or the parent kills it.
+  (
+    exec >/dev/null 2>&1
+    sleep_pid=
+    # On TERM/INT/HUP, kill our sleep child and exit silently so the watchdog
+    # cancellation doesn't leak the sleep process.
+    trap 'if [ -n "$sleep_pid" ]; then kill "$sleep_pid" 2>/dev/null; fi; exit 0' TERM INT HUP
+    sleep "$timeout" &
+    sleep_pid=$!
+    wait "$sleep_pid" 2>/dev/null
+    rc=$?
+    # rc == 0 means sleep ran to completion without being interrupted.
+    [ "$rc" -eq 0 ] && kill -s "$signal" "$target_pid" 2>/dev/null
+  ) &
+  printf '%s\n' "$!"
+}
+
+cmss_timer_stop() {
+  if [ "$#" -ne 1 ]; then
+    return 0
+  fi
+  case "$1" in
+    ''|0|*[!0-9]*) return 0 ;;
+  esac
+  kill "$1" 2>/dev/null
+  return 0
+}
+
+cmss_pane_visible() {
+  # Honour CMSS_REQUIRE_VISIBLE_PANE=0 as "always visible".
+  require=${CMSS_REQUIRE_VISIBLE_PANE:-1}
+  case "$require" in
+    0) return 0 ;;
+    *[!0-9]*|'') require=1 ;;
+  esac
+
+  # Not in tmux at all → trivially visible.
+  if [ -z "${TMUX_PANE:-}" ]; then
+    return 0
+  fi
+
+  # In tmux but tmux isn't on PATH → can't tell, fail closed.
+  if ! command -v tmux >/dev/null 2>&1; then
+    return 1
+  fi
+
+  state=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_active}:#{window_active}:#{session_attached}' 2>/dev/null) || return 1
+
+  # Format: pane_active:window_active:session_attached
+  # All three must be "yes": pane=1, window=1, session_attached != 0.
+  case "$state" in
+    1:1:0) return 1 ;;
+    1:1:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ "$#" -lt 1 ]; then
+  printf 'usage: cmss-core {timer-start|timer-stop|pane-visible} [args...]\n' >&2
+  exit 2
+fi
+
+cmd=$1
+shift
+
+case "$cmd" in
+  timer-start)  cmss_timer_start "$@" ;;
+  timer-stop)   cmss_timer_stop "$@" ;;
+  pane-visible) cmss_pane_visible ;;
+  *)
+    printf 'cmss-core: unknown subcommand: %s\n' "$cmd" >&2
+    exit 2
+    ;;
+esac

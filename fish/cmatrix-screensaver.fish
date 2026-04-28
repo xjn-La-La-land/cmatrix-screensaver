@@ -21,6 +21,8 @@ if not set -q CMSS_REQUIRE_VISIBLE_PANE
     set -g CMSS_REQUIRE_VISIBLE_PANE 1
 end
 
+set -g CMSS_CORE (dirname (status filename))/../bin/cmss-core
+
 set -g CMSS_ENABLED 0
 set -g CMSS_RUNNING 0
 set -g CMSS_IN_COMMAND 0
@@ -82,7 +84,7 @@ function __cmss_cancel_timer
     __cmss_normalize_state
 
     if test "$CMSS_TIMER_PID" -gt 0
-        kill "$CMSS_TIMER_PID" >/dev/null 2>&1
+        sh "$CMSS_CORE" timer-stop "$CMSS_TIMER_PID" >/dev/null 2>&1
         set -g CMSS_TIMER_PID 0
     end
 end
@@ -117,9 +119,9 @@ function __cmss_schedule_timer
     end
 
     __cmss_cancel_timer
-    command sh -c 'sleep "$1"; kill -USR1 "$2" >/dev/null 2>&1' sh "$timeout" "$fish_pid" >/dev/null 2>&1 &
-    if string match -qr '^[0-9]+$' -- "$last_pid"
-        set -g CMSS_TIMER_PID $last_pid
+    set -l watchdog (sh "$CMSS_CORE" timer-start "$fish_pid" USR1 "$timeout" 2>/dev/null)
+    if string match -qr '^[0-9]+$' -- "$watchdog"
+        set -g CMSS_TIMER_PID $watchdog
     else
         set -g CMSS_TIMER_PID 0
     end
@@ -128,38 +130,7 @@ end
 
 function __cmss_pane_is_visible
     __cmss_normalize_state
-
-    if test "$CMSS_REQUIRE_VISIBLE_PANE" -ne 1
-        return 0
-    end
-
-    if not set -q TMUX_PANE
-        return 0
-    end
-
-    if not type -q tmux
-        __cmss_log "tmux not found while TMUX_PANE is set"
-        return 1
-    end
-
-    set -l tmux_state (tmux display-message -p -t "$TMUX_PANE" '#{pane_active}:#{window_active}:#{session_attached}' 2>/dev/null)
-    if test $status -ne 0
-        __cmss_log "failed to query tmux pane visibility"
-        return 1
-    end
-
-    set -l tmux_fields (string split ':' -- "$tmux_state")
-    if test (count $tmux_fields) -ne 3
-        __cmss_log "unexpected tmux visibility format: $tmux_state"
-        return 1
-    end
-
-    if test "$tmux_fields[1]" = 1 -a "$tmux_fields[2]" = 1 -a "$tmux_fields[3]" != 0
-        return 0
-    end
-
-    __cmss_log "pane not visible: $tmux_state"
-    return 1
+    CMSS_REQUIRE_VISIBLE_PANE=$CMSS_REQUIRE_VISIBLE_PANE sh "$CMSS_CORE" pane-visible
 end
 
 function __cmss_update_prompt_state

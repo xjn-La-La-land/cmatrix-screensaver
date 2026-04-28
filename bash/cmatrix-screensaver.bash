@@ -12,6 +12,9 @@ declare -g CMSS_LOADED_BASH=1
 : "${CMSS_REQUIRE_VISIBLE_PANE:=1}"
 : "${CMSS_BASH_WAKE_SIGNAL:=WINCH}"
 
+declare -g CMSS_CORE
+CMSS_CORE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/cmss-core"
+
 declare -g CMSS_ENABLED=0
 declare -g CMSS_RUNNING=0
 declare -g CMSS_IN_COMMAND=0
@@ -72,7 +75,7 @@ __cmss_cancel_timer() {
   __cmss_normalize_state
 
   if (( CMSS_TIMER_PID > 0 )); then
-    kill "$CMSS_TIMER_PID" >/dev/null 2>&1 || true
+    sh "$CMSS_CORE" timer-stop "$CMSS_TIMER_PID" >/dev/null 2>&1 || true
     CMSS_TIMER_PID=0
   fi
 }
@@ -81,6 +84,7 @@ __cmss_schedule_timer() {
   __cmss_normalize_state
   local timeout=$CMSS_TIMEOUT
   local target_pid=$BASHPID
+  local watchdog
 
   if (( CMSS_ENABLED != 1 || CMSS_RUNNING != 0 || CMSS_IN_COMMAND != 0 )); then
     __cmss_cancel_timer
@@ -93,20 +97,11 @@ __cmss_schedule_timer() {
   fi
 
   __cmss_cancel_timer
-  CMSS_TIMER_PID=$(
-    command sh -c '
-      printf "%s\n" "$$"
-      exec >/dev/null 2>&1
-      sleep_pid=
-      trap '\''if [ -n "$sleep_pid" ]; then kill "$sleep_pid" 2>/dev/null; fi; exit 0'\'' TERM INT HUP
-      sleep "$1" &
-      sleep_pid=$!
-      wait "$sleep_pid" || exit 0
-      kill -s "$3" "$2" >/dev/null 2>&1
-    ' sh "$timeout" "$target_pid" "$CMSS_BASH_WAKE_SIGNAL" &
-  )
+  watchdog=$(sh "$CMSS_CORE" timer-start "$target_pid" "$CMSS_BASH_WAKE_SIGNAL" "$timeout" 2>/dev/null)
 
-  if [[ ! $CMSS_TIMER_PID =~ ^[0-9]+$ ]]; then
+  if [[ $watchdog =~ ^[0-9]+$ ]]; then
+    CMSS_TIMER_PID=$watchdog
+  else
     CMSS_TIMER_PID=0
   fi
 
@@ -115,39 +110,7 @@ __cmss_schedule_timer() {
 
 __cmss_pane_is_visible() {
   __cmss_normalize_state
-
-  if (( CMSS_REQUIRE_VISIBLE_PANE != 1 )); then
-    return 0
-  fi
-
-  if [[ -z ${TMUX_PANE:-} ]]; then
-    return 0
-  fi
-
-  if ! command -v tmux >/dev/null 2>&1; then
-    __cmss_log "tmux not found while TMUX_PANE is set"
-    return 1
-  fi
-
-  local tmux_state
-  tmux_state=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_active}:#{window_active}:#{session_attached}' 2>/dev/null) || {
-    __cmss_log "failed to query tmux pane visibility"
-    return 1
-  }
-
-  local pane_active window_active session_attached
-  IFS=: read -r pane_active window_active session_attached <<< "$tmux_state"
-  if [[ -z $pane_active || -z $window_active || -z $session_attached ]]; then
-    __cmss_log "unexpected tmux visibility format: ${tmux_state}"
-    return 1
-  fi
-
-  if [[ $pane_active == 1 && $window_active == 1 && $session_attached != 0 ]]; then
-    return 0
-  fi
-
-  __cmss_log "pane not visible: ${tmux_state}"
-  return 1
+  CMSS_REQUIRE_VISIBLE_PANE="$CMSS_REQUIRE_VISIBLE_PANE" sh "$CMSS_CORE" pane-visible
 }
 
 __cmss_update_readline_state() {

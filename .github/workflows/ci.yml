@@ -17,11 +17,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y zsh fish shellcheck
 
-      - name: shellcheck (bash + bin)
-        run: shellcheck bash/cmatrix-screensaver.bash bin/install.sh bin/uninstall.sh
+      - name: shellcheck (bash + bin + tests)
+        run: shellcheck bash/cmatrix-screensaver.bash bin/install.sh bin/uninstall.sh bin/cmss-core tests/install-roundtrip.sh
 
       - name: bash -n
         run: bash -n bash/cmatrix-screensaver.bash
+
+      - name: sh -n on bin/cmss-core
+        run: sh -n bin/cmss-core
 
       - name: zsh -n
         run: zsh -n zsh/cmatrix-screensaver.zsh

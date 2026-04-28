@@ -16,6 +16,8 @@ typeset -gi CMSS_TIMEOUT=${CMSS_TIMEOUT:-30}
 typeset -g CMSS_COMMAND=${CMSS_COMMAND:-'cmatrix -s -r'}
 typeset -gi CMSS_REQUIRE_VISIBLE_PANE=${CMSS_REQUIRE_VISIBLE_PANE:-1}
 
+typeset -g CMSS_CORE=${${(%):-%x}:A:h}/../bin/cmss-core
+
 typeset -gi CMSS_ENABLED=0
 typeset -gi CMSS_RUNNING=0
 typeset -gi CMSS_IN_COMMAND=0
@@ -32,13 +34,14 @@ function __cmss_log() {
 
 function __cmss_cancel_timer() {
   if (( CMSS_TIMER_PID > 0 )); then
-    kill "${CMSS_TIMER_PID}" 2>/dev/null || true
+    sh "${CMSS_CORE}" timer-stop "${CMSS_TIMER_PID}" 2>/dev/null || true
     CMSS_TIMER_PID=0
   fi
 }
 
 function __cmss_schedule_timer() {
   local timeout=${CMSS_TIMEOUT:-300}
+  local watchdog
 
   if (( ! CMSS_ENABLED || CMSS_RUNNING || CMSS_IN_COMMAND )); then
     __cmss_cancel_timer
@@ -56,11 +59,12 @@ function __cmss_schedule_timer() {
   fi
 
   __cmss_cancel_timer
-  (
-    sleep "${timeout}"
-    kill -s USR1 "$$" 2>/dev/null
-  ) >/dev/null 2>&1 &!
-  CMSS_TIMER_PID=$!
+  watchdog=$(sh "${CMSS_CORE}" timer-start "$$" USR1 "${timeout}" 2>/dev/null)
+  if [[ ${watchdog} == <-> ]]; then
+    CMSS_TIMER_PID=${watchdog}
+  else
+    CMSS_TIMER_PID=0
+  fi
   __cmss_log "armed timer pid=${CMSS_TIMER_PID} timeout=${timeout}s"
 }
 
@@ -69,39 +73,7 @@ function __cmss_mark_activity() {
 }
 
 function __cmss_pane_is_visible() {
-  local tmux_state
-  local -a tmux_fields
-
-  if (( ! CMSS_REQUIRE_VISIBLE_PANE )); then
-    return 0
-  fi
-
-  if [[ -z ${TMUX_PANE:-} ]]; then
-    return 0
-  fi
-
-  if (( ! ${+commands[tmux]} )); then
-    __cmss_log "tmux not found while TMUX_PANE is set"
-    return 1
-  fi
-
-  tmux_state=$(tmux display-message -p -t "${TMUX_PANE}" '#{pane_active}:#{window_active}:#{session_attached}' 2>/dev/null) || {
-    __cmss_log "failed to query tmux pane visibility"
-    return 1
-  }
-
-  tmux_fields=(${(s.:.)tmux_state})
-  if (( ${#tmux_fields[@]} != 3 )); then
-    __cmss_log "unexpected tmux visibility format: ${tmux_state}"
-    return 1
-  fi
-
-  if [[ ${tmux_fields[1]} == 1 && ${tmux_fields[2]} == 1 && ${tmux_fields[3]} != 0 ]]; then
-    return 0
-  fi
-
-  __cmss_log "pane not visible: ${tmux_state}"
-  return 1
+  CMSS_REQUIRE_VISIBLE_PANE="${CMSS_REQUIRE_VISIBLE_PANE}" sh "${CMSS_CORE}" pane-visible
 }
 
 function __cmss_save_widget() {
