@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zsh, fish, shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh fish shellcheck
+
+      - name: shellcheck (bash + bin)
+        run: shellcheck bash/cmatrix-screensaver.bash bin/install.sh bin/uninstall.sh
+
+      - name: bash -n
+        run: bash -n bash/cmatrix-screensaver.bash
+
+      - name: zsh -n
+        run: zsh -n zsh/cmatrix-screensaver.zsh
+
+      - name: fish --no-execute
+        run: fish --no-execute fish/cmatrix-screensaver.fish
+
+  install-roundtrip:
+    name: Install/uninstall round-trip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zsh and fish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh fish
+
+      - name: Run install/uninstall round-trip tests
+        run: tests/install-roundtrip.sh
